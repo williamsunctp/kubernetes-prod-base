@@ -1,0 +1,80 @@
+replicaCount: ${replica_count}
+
+fullnameOverride: ${fullname_override}
+namespace: ${namespace}
+
+deployment:
+  containers:
+  - name: ${fullname_override}
+    image:
+      repository: ${docker_repository}
+      tag: ${docker_tag}
+      pullPolicy: Always
+
+    args: [
+      "Frontend"
+    ]
+
+    env:
+      base:
+      - name: JAVA_OPTS
+        value: "-Dspring.zipkin.baseUrl=http://opentelemtry-collector-collector.monitoring.svc:9411"
+      perEnv: []
+
+    ports:
+    - name: http
+      protocol: TCP
+      containerPort: 8081
+      servicePort: 8081
+
+ingress:
+  enabled: false
+  annotations:
+    kubernetes.io/ingress.class: istio
+    # kubernetes.io/tls-acme: "true"
+  paths:
+    - path: /
+      pathType: Prefix
+      servicePort: 8081
+  hosts:
+  - sample-app-1.${domain_name}
+  tls:
+   - hosts:
+     - sample-app-1.${domain_name}
+      # Istio doc: https://istio.io/latest/docs/ops/integrations/certmanager/#kubernetes-ingress
+      # If using istio and using the domain-wildcard cert, the cert-manager kind: certificate
+      # should be created in the istio-system namespace.
+     secretName: domain-wildcard # This should match the Certificate secretName
+  ingressClass:
+    enabled: true
+    # Docs: https://kubernetes.io/docs/concepts/services-networking/ingress/#ingressclass-scope
+    spec:
+      controller: istio.io/ingress-controller
+
+#
+# Istio virtual service
+#
+istio:
+  ##
+  ## https://istio.io/latest/docs/reference/config/networking/virtual-service/
+  virtualService:
+    enabled: true
+    apiVersion: networking.istio.io/v1alpha3
+    gateways:
+    # <namespace>/gateway-name
+    - istio-system/main-gateway
+    hosts:
+    - sample-app-1.${domain_name}
+    ##
+    ## The definition for the http, tls, tcp, etc.  Per the istio virtual service doc
+    ## This template will just put everything under "protocolDefinition" into the virtualservice
+    protocolDefinition:
+      http:
+      - match:
+        - uri:
+            prefix: /
+        route:
+        - destination:
+            port:
+              number: 8081
+            host: ${fullname_override}
